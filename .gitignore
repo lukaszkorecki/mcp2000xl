@@ -1,0 +1,8 @@
+.idea/
+*.iml
+.clj-kondo/
+.cpcache/
+.nrepl-*
+*.class
+target/
+.DS_Store
