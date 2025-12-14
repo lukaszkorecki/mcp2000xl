@@ -101,73 +101,73 @@
                :content coerced-response-data
                :meta (meta response-data)})))))))
 
-(defn build-session-based
-  "Build a session-based tool specification (for STDIO servers)"
-  [tool-def]
+(defn- create-tool-result
+  "Create a CallToolResult from handler logic result"
+  [result tool-name]
+  (try
+    (if (:error result)
+      (.build
+       (doto (McpSchema$CallToolResult/builder)
+         (.isError true)
+         (.addTextContent (:content result))))
+      (.build
+       (doto (McpSchema$CallToolResult/builder)
+         (.structuredContent mcp-mapper (jsonista/write-value-as-string (:content result)))
+         (.meta (or (:meta result) {})))))
+    (catch Throwable e
+      (let [ex (ex-info "Exception calling tool." {:tool tool-name} e)]
+        (log/error ex (ex-message ex)))
+      (.build
+       (doto (McpSchema$CallToolResult/builder)
+         (.isError true)
+         (.addTextContent (throwable->string e))
+         (.meta (or (meta e) {})))))))
+
+(defmulti create-tool-handler
+  "Create the BiFunction handler based on server type"
+  (fn [_handler-logic _tool-name server-type] server-type))
+
+(defmethod create-tool-handler :session-based
+  [handler-logic tool-name _]
+  (reify BiFunction
+    (apply [_this _exchange request]
+      (CompletableFuture/supplyAsync
+       (fn []
+         (let [request-data (McpSchema$CallToolRequest/.arguments request)
+               result (handler-logic request-data)]
+           (create-tool-result result tool-name)))))))
+
+(defmethod create-tool-handler :stateless
+  [handler-logic tool-name _]
+  (reify BiFunction
+    (apply [_this _context request]
+      (let [request-data (McpSchema$CallToolRequest/.arguments request)
+            result (handler-logic request-data)]
+        (create-tool-result result tool-name)))))
+
+(defmulti build-tool
+  "Build a tool specification based on server type"
+  (fn [_tool-def server-type] server-type))
+
+(defmethod build-tool :session-based
+  [tool-def _]
   (let [tool-schema (build-tool-schema tool-def)
         handler-logic (create-handler-logic tool-def)
         tool-name (:name tool-def)]
     (.build
      (doto (McpServerFeatures$SyncToolSpecification/builder)
        (.tool tool-schema)
-       (.callHandler
-        (reify BiFunction
-          (apply [_this _exchange request]
-            (CompletableFuture/supplyAsync
-             (fn []
-               (try
-                 (let [request-data (McpSchema$CallToolRequest/.arguments request)
-                       result (handler-logic request-data)]
-                   (if (:error result)
-                     (.build
-                      (doto (McpSchema$CallToolResult/builder)
-                        (.isError true)
-                        (.addTextContent (:content result))))
-                     (.build
-                      (doto (McpSchema$CallToolResult/builder)
-                        (.structuredContent mcp-mapper (jsonista/write-value-as-string (:content result)))
-                        (.meta (or (:meta result) {}))))))
-                 (catch Throwable e
-                   (let [ex (ex-info "Exception calling tool." {:tool tool-name} e)]
-                     (log/error ex (ex-message ex)))
-                   (.build
-                    (doto (McpSchema$CallToolResult/builder)
-                      (.isError true)
-                      (.addTextContent (throwable->string e))
-                      (.meta (or (meta e) {})))))))))))))))
+       (.callHandler (create-tool-handler handler-logic tool-name :session-based))))))
 
-(defn build-stateless
-  "Build a stateless tool specification (for HTTP servers)"
-  [tool-def]
+(defmethod build-tool :stateless
+  [tool-def _]
   (let [tool-schema (build-tool-schema tool-def)
         handler-logic (create-handler-logic tool-def)
         tool-name (:name tool-def)]
     (.build
      (doto (McpStatelessServerFeatures$SyncToolSpecification/builder)
        (.tool tool-schema)
-       (.callHandler
-        (reify BiFunction
-          (apply [_this _context request]
-            (try
-              (let [request-data (McpSchema$CallToolRequest/.arguments request)
-                    result (handler-logic request-data)]
-                (if (:error result)
-                  (.build
-                   (doto (McpSchema$CallToolResult/builder)
-                     (.isError true)
-                     (.addTextContent (:content result))))
-                  (.build
-                   (doto (McpSchema$CallToolResult/builder)
-                     (.structuredContent mcp-mapper (jsonista/write-value-as-string (:content result)))
-                     (.meta (or (:meta result) {}))))))
-              (catch Throwable e
-                (let [ex (ex-info "Exception calling tool." {:tool tool-name} e)]
-                  (log/error ex (ex-message ex)))
-                (.build
-                 (doto (McpSchema$CallToolResult/builder)
-                   (.isError true)
-                   (.addTextContent (throwable->string e))
-                   (.meta (or (meta e) {})))))))))))))
+       (.callHandler (create-tool-handler handler-logic tool-name :stateless))))))
 
 (defn build-tools
   "Build tool specifications from plain data definitions.
@@ -178,9 +178,4 @@
    
    Returns: Vector of Java SDK tool specification objects"
   [tool-defs server-type]
-  (mapv (case server-type
-          :session-based build-session-based
-          :stateless build-stateless
-          (throw (IllegalArgumentException.
-                  (str "Unknown server-type: " server-type ". Must be :session-based or :stateless"))))
-        tool-defs))
+  (mapv #(build-tool % server-type) tool-defs))

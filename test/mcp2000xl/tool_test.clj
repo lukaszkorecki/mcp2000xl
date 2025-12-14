@@ -10,45 +10,49 @@
 (deftest can-build-session-based-tools
   (is (instance?
        McpServerFeatures$SyncToolSpecification
-       (impl.tool/build-session-based
+       (impl.tool/build-tool
         {:name "add"
          :title "Add two numbers"
          :description "Adds two numbers together"
          :input-schema [:map [:a int?] [:b int?]]
          :output-schema [:map [:result int?]]
          :handler (fn [{:keys [a b]}]
-                    {:result (+ a b)})}))))
+                    {:result (+ a b)})}
+        :session-based))))
 
 (deftest can-build-stateless-tools
   (is (instance?
        McpStatelessServerFeatures$SyncToolSpecification
-       (impl.tool/build-stateless
+       (impl.tool/build-tool
         {:name "add"
          :title "Add two numbers"
          :description "Adds two numbers together"
          :input-schema [:map [:a int?] [:b int?]]
          :output-schema [:map [:result int?]]
          :handler (fn [{:keys [a b]}]
-                    {:result (+ a b)})}))))
+                    {:result (+ a b)})}
+        :stateless))))
 
 (deftest can-build-session-based-resources
   (is (instance?
        McpServerFeatures$SyncResourceSpecification
-       (impl.resource/build-session-based
+       (impl.resource/build-resource
         {:url "custom://test"
          :name "Test Resource"
          :description "A test resource"
          :mime-type "text/plain"
          :handler (fn [_request]
-                    ["Test content"])}))))
+                    ["Test content"])}
+        :session-based))))
 
 (deftest can-build-stateless-resources
   (is (instance?
        McpStatelessServerFeatures$SyncResourceSpecification
-       (impl.resource/build-stateless
+       (impl.resource/build-resource
         {:url "custom://test"
          :name "Test Resource"
          :description "A test resource"
          :mime-type "text/plain"
          :handler (fn [_request]
-                    ["Test content"])}))))
+                    ["Test content"])}
+        :stateless))))
