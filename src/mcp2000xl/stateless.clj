@@ -1,10 +1,11 @@
 (ns mcp2000xl.stateless
   "Stateless MCP server support for Ring and other web frameworks"
   (:require [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [jsonista.core :as json])
   (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
            (io.modelcontextprotocol.server McpServer McpStatelessServerHandler McpServer$StatelessSyncSpecification)
-           (io.modelcontextprotocol.spec McpStatelessServerTransport McpSchema$ServerCapabilities McpSchema)
+           (io.modelcontextprotocol.spec McpStatelessServerTransport McpSchema$ServerCapabilities McpSchema McpSchema$JSONRPCRequest)
            (io.modelcontextprotocol.common McpTransportContext)
            (reactor.core.publisher Mono)
            (java.util List)
@@ -107,18 +108,27 @@
     @handler-atom))
 
 (defn invoke
-  "Invokes the MCP handler with a request (Clojure map or JSON string).
+  "Invokes the MCP handler with a request as a Clojure map.
    
-   The handler processes MCP JSON-RPC requests. For now, you must provide
-   properly formatted JSON-RPC requests.
+   Efficiently processes requests by passing Clojure data structures directly
+   to the handler without wasteful JSON serialization/deserialization cycles.
+   Keys are automatically stringified to ensure compatibility.
    
    Parameters:
    - handler - Handler created with create-handler
-   - request - JSON-RPC request as Clojure map or JSON string
+   - request-map - JSON-RPC request as Clojure map with keys:
+     - :jsonrpc (optional, defaults to \"2.0\")
+     - :id (required) - Request ID (string or number)
+     - :method (required) - Method name (e.g., \"tools/call\")
+     - :params (optional) - Request parameters as map
    - opts (optional) - Options map:
      - :timeout-ms - Timeout in milliseconds (default: 30000)
    
-   Returns: Clojure map with the response
+   Returns: Clojure map with:
+     - :jsonrpc - JSON-RPC version
+     - :id - Request ID
+     - :result - Result object (on success)
+     - :error - Error object (on error)
    
    Example:
    (invoke handler 
@@ -130,13 +140,15 @@
    (invoke handler request {}))
   ([handler request {:keys [timeout-ms] :or {timeout-ms 30000}}]
    (try
-     (let [;; Convert request to JSON string if it's a map
-           json-request (if (string? request)
-                          request
-                          (json/write-value-as-string request))
+     ;; Stringify all keys to ensure Jackson compatibility
+     (let [stringified (walk/stringify-keys request)
 
-           ;; Parse as JSON-RPC message
-           jsonrpc-request (McpSchema/deserializeJsonRpcMessage mcp-mapper json-request)
+           ;; Direct construction - no JSON serialization!
+           jsonrpc-request (McpSchema$JSONRPCRequest.
+                            (get stringified "jsonrpc" "2.0")
+                            (get stringified "method")
+                            (get stringified "id")
+                            (get stringified "params"))
 
            ;; Create empty transport context  
            context McpTransportContext/EMPTY
@@ -150,15 +162,18 @@
            ;; Block and get response (with timeout)
            response (-> response-mono
                         (.timeout (Duration/ofMillis timeout-ms))
-                        (.block))
+                        (.block))]
 
-           ;; Serialize response to JSON
-           json-response (McpSchema/serializeJsonRpcMessage mcp-mapper response)]
-
-       ;; Parse back to Clojure map
-       (json/read-value json-response))
+       ;; Extract fields to Clojure map - no JSON parsing!
+       {:jsonrpc (.jsonrpc response)
+        :id (.id response)
+        :result (.result response)
+        :error (.error response)})
 
      (catch Exception e
        (log/error e "Error invoking MCP handler")
-       {:error (ex-message e)
-        :type (-> e class .getName)}))))
+       {:jsonrpc "2.0"
+        :id (get request :id)
+        :error {:code -32603
+                :message (ex-message e)
+                :data {:type (-> e class .getName)}}}))))
