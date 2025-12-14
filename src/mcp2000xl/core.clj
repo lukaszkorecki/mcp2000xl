@@ -1,93 +1,22 @@
-(ns com.latacora.mcp.core
+(ns mcp2000xl.core
   (:require [clojure.tools.logging :as log]
             [jsonista.core :as jsonista]
             [malli.core :as m]
             [malli.error :as me]
             [malli.json-schema :as mjs]
-            [malli.transform :as mt]
-            [ring.adapter.jetty :as jetty]
-            [ring.util.jakarta.servlet :as servlet]
-            [ring.websocket :as ws])
+            [malli.transform :as mt])
   (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
            (io.modelcontextprotocol.server McpServer McpServerFeatures$SyncToolSpecification McpServerFeatures$SyncResourceSpecification)
-           (io.modelcontextprotocol.server.transport HttpServletStreamableServerTransportProvider)
+           (io.modelcontextprotocol.server.transport HttpServletStreamableServerTransportProvider StdioServerTransportProvider)
            (io.modelcontextprotocol.spec McpSchema$CallToolRequest McpSchema$CallToolResult McpSchema$ServerCapabilities McpSchema$Tool McpSchema$ToolAnnotations
                                          McpSchema$Resource McpSchema$TextResourceContents McpSchema$ReadResourceResult)
            (jakarta.servlet.http HttpServlet)
            (java.io PrintWriter StringWriter)
-           (jakarta.servlet.http HttpServletRequest)
            (java.util List)
-           (java.io InputStream)
            (java.time Duration)
-           (java.util Locale)
-           (java.util.function BiFunction)
-           (org.eclipse.jetty.ee9.nested Request Response)
-           (org.eclipse.jetty.ee9.servlet ServletContextHandler ServletHandler)
-           (org.eclipse.jetty.server Server)))
+           (java.util.function BiFunction)))
 
 (set! *warn-on-reflection* true)
-
-(defn lazy-input-stream [delayed-stream]
-  (proxy [InputStream] []
-    (read
-      ([] (.read ^InputStream @delayed-stream))
-      ([b] (.read ^InputStream @delayed-stream b))
-      ([b off len] (.read ^InputStream @delayed-stream b off len)))
-    (available [] (.available ^InputStream @delayed-stream))
-    (close [] (.close ^InputStream @delayed-stream))
-    (mark [readlimit] (.mark ^InputStream @delayed-stream readlimit))
-    (markSupported [] (.markSupported ^InputStream @delayed-stream))
-    (reset [] (.reset ^InputStream @delayed-stream))
-    (skip [n] (.skip ^InputStream @delayed-stream n))))
-
-(defn build-request-map
-  "Create the request map from the HttpServletRequest object."
-  [^HttpServletRequest request]
-  {:server-port (.getServerPort request)
-   :server-name (.getServerName request)
-   :remote-addr (.getRemoteAddr request)
-   :uri (.getRequestURI request)
-   :query-string (.getQueryString request)
-   :scheme (keyword (.getScheme request))
-   :request-method (keyword (.toLowerCase (.getMethod request) Locale/ENGLISH))
-   :protocol (.getProtocol request)
-   :headers (#'servlet/get-headers request)
-   :content-type (.getContentType request)
-   :content-length (#'servlet/get-content-length request)
-   :character-encoding (.getCharacterEncoding request)
-   :ssl-client-cert (#'servlet/get-client-cert request)
-   :body (lazy-input-stream (fn [] (.getInputStream request)))})
-
-(defn proxy-handler [handler options]
-  (proxy [ServletHandler] []
-    (doHandle [_ ^Request base-request request response]
-      (let [request-map (build-request-map request)
-            response-map (handler (with-meta request-map {:request request :response response}))]
-        (when-not (Request/.isHandled request)
-          (try
-            (if (ws/websocket-response? response-map)
-              (#'jetty/upgrade-to-websocket request response response-map options)
-              (servlet/update-servlet-response response response-map))
-            (finally
-              (-> response Response/.getOutputStream java.io.Closeable/.close)
-              (Request/.setHandled base-request true))))))))
-
-(defn run-jetty
-  "Like ring.adapter.jetty/run-jetty but passes the raw request and response along for MCP usage."
-  ^Server [handler options]
-  (let [server (#'jetty/create-server (dissoc options :configurator))
-        proxy (proxy-handler handler options)]
-    (.setHandler ^Server server ^ServletContextHandler (#'jetty/context-handler proxy))
-    (when-let [configurator (:configurator options)]
-      (configurator server))
-    (try
-      (Server/.start server)
-      (when (:join? options true)
-        (Server/.join server))
-      server
-      (catch Exception ex
-        (Server/.stop server)
-        (throw ex)))))
 
 (def mcp-mapper
   (JacksonMcpJsonMapper. jsonista/default-object-mapper))
@@ -308,51 +237,3 @@
 
     {:transport-provider transport-provider
      :mcp-server server}))
-
-(defn create-ring-handler
-  "Creates a ring handler that functions as a complete streamable-http MCP endpoint. This is
-   intended to be more convenient to incorporate into Clojure servers than the underlying Java
-   library would otherwise support. It achieves this through cooperation with a custom jetty
-   adapter that allows individual ring handlers to assume complete responsibility for the
-   request/response lifecycle and therefore must be used with com.latacora.mcp.core/run-jetty
-   when starting your jetty server. The behavior is otherwise identical to ring.adapter.jetty/run-jetty."
-  [{:keys [transport-provider]}]
-  {:pre [transport-provider]}
-  (fn handler
-    ([request]
-     (let [{:keys [request response]} (meta request)]
-       (try
-         (.service ^HttpServlet transport-provider request response)
-         (finally (Request/.setHandled request true)))))
-    ([request respond raise]
-     (try (respond (handler request))
-          (catch Throwable e (raise e))))))
-
-(comment
-
-  (def tool
-    (create-tool-specification
-     {:name "add"
-      :title "Add two numbers"
-      :description "Adds two numbers together"
-      :input-schema [:map [:a int?] [:b int?]]
-      :output-schema [:map [:result int?]]
-      :handler (fn [_exchange {:keys [a b]}]
-                 {:result (+ a b)})}))
-
-  (def resource
-    (create-resource-specification
-     {:url "custom://hello"
-      :name "Hello Resource"
-      :description "A simple hello resource"
-      :mime-type "text/plain"
-      :handler (fn [_exchange _request]
-                 ["Hello, World!"])}))
-
-  (def mcp-server (build-mcp-server {:name "hello-world" :version "1.0.0" :tools [tool] :resources [resource]}))
-  (def handler (create-ring-handler mcp-server))
-
-  (def server (run-jetty handler {:port 3000 :join? false}))
-
-  (.stop server)
-  (.close (:mcp-server mcp-server)))

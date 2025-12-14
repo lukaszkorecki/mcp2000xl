@@ -1,6 +1,6 @@
-(ns com.latacora.mcp.core-test
+(ns mcp2000xl.core-test
   (:require [clojure.test :refer :all]
-            [com.latacora.mcp.core :as mcp])
+            [mcp2000xl.core :as mcp])
   (:import (io.modelcontextprotocol.server McpServerFeatures$SyncToolSpecification)))
 
 
