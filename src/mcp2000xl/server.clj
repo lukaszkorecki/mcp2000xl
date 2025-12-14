@@ -2,7 +2,7 @@
   (:require [jsonista.core :as jsonista])
   (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
            (io.modelcontextprotocol.server McpServer)
-           (io.modelcontextprotocol.server.transport HttpServletStreamableServerTransportProvider StdioServerTransportProvider)
+           (io.modelcontextprotocol.server.transport HttpServletStreamableServerTransportProvider)
            (io.modelcontextprotocol.spec McpSchema$ServerCapabilities)
            (java.util List)
            (java.time Duration)))

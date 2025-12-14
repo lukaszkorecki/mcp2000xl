@@ -16,12 +16,12 @@
 (def mcp-mapper
   (JacksonMcpJsonMapper. jsonista/default-object-mapper))
 
-(defn throwable->string [^Throwable t]
+(defn throwable->string [t]
   (let [sw (StringWriter.)]
     (with-open [sw sw
                 pw (PrintWriter. sw)]
-      (.printStackTrace t pw))
-    (.toString sw)))
+      (Throwable/.printStackTrace t pw))
+    (StringWriter/.toString sw)))
 
 (def malli-transformer
   (mt/transformer
@@ -71,7 +71,7 @@
         (reify BiFunction
           (apply [_this exchange request]
             (try
-              (let [request-data (.arguments ^McpSchema$CallToolRequest request)
+              (let [request-data (McpSchema$CallToolRequest/.arguments request)
                     clojure-request-data (jsonista/read-value (jsonista/write-value-as-string request-data))
                     coerced-request-data (request-coercer clojure-request-data)]
                 (if-some [explanation (request-explainer coerced-request-data)]
