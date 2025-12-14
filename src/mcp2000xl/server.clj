@@ -77,18 +77,18 @@
                    (.capabilities
                     (.build
                      (cond-> (McpSchema$ServerCapabilities/builder)
-                       (not-empty experimental)
-                       (.experimental experimental)
-                       (not-empty resources)
-                       (.resources true true)
-                       (not-empty tools)
-                       (.tools true)
-                       (not-empty prompts)
-                       (.prompts true)
-                       (not-empty completions)
-                       (.completions)
-                       logging
-                       (.logging))))))]
+                             (not-empty experimental)
+                             (.experimental experimental)
+                             (not-empty resources)
+                             (.resources true true)
+                             (not-empty tools)
+                             (.tools true)
+                             (not-empty prompts)
+                             (.prompts true)
+                             (not-empty completions)
+                             (.completions)
+                             logging
+                             (.logging))))))]
 
     (log/info "STDIO MCP server started successfully")
     (log/info "Reading from stdin, writing to stdout...")
