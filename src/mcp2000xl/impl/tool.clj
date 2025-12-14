@@ -1,8 +1,8 @@
-(ns mcp2000xl.tool-builder
-  "Build concrete tool specifications from tool definitions.
+(ns mcp2000xl.impl.tool
+  "Internal: Build MCP tool specifications from plain data definitions.
    
-   Converts tool definitions (plain data) into either session-based or stateless
-   tool specifications depending on the server type."
+   Handles the complexity of converting plain Clojure maps into either
+   session-based or stateless Java SDK tool specifications."
   (:require [clojure.tools.logging :as log]
             [jsonista.core :as jsonista]
             [malli.core :as m]
@@ -25,7 +25,7 @@
 (def mcp-mapper
   (JacksonMcpJsonMapper. jsonista/default-object-mapper))
 
-(defn throwable->string [t]
+(defn- throwable->string [^Throwable t]
   (let [sw (StringWriter.)]
     (with-open [sw sw
                 pw (PrintWriter. sw)]
@@ -41,10 +41,16 @@
    (mt/collection-transformer)))
 
 (defn- build-tool-schema
-  "Build MCP Tool schema from tool definition"
+  "Build MCP Tool schema from definition"
   [{:keys [name title description input-schema output-schema
            read-only-hint destructive-hint idempotent-hint
-           open-world-hint return-direct meta]}]
+           open-world-hint return-direct meta]
+    :or {read-only-hint false
+         destructive-hint false
+         idempotent-hint false
+         open-world-hint false
+         return-direct false
+         meta {}}}]
   (.build
    (doto (McpSchema$Tool/builder)
      (.name name)
@@ -57,7 +63,7 @@
      (.meta meta))))
 
 (defn- create-handler-logic
-  "Create the shared handler logic that validates input/output and calls the user's handler"
+  "Create shared validation/execution logic for tool handlers"
   [{:keys [name handler input-schema output-schema]}]
   (let [request-coercer (m/decoder input-schema malli-transformer)
         request-explainer (m/explainer input-schema)
@@ -95,7 +101,7 @@
                :content coerced-response-data
                :meta (meta response-data)})))))))
 
-(defn build-session-based-tool
+(defn build-session-based
   "Build a session-based tool specification (for STDIO servers)"
   [tool-def]
   (let [tool-schema (build-tool-schema tool-def)
@@ -130,7 +136,7 @@
                       (.addTextContent (throwable->string e))
                       (.meta (or (meta e) {})))))))))))))))
 
-(defn build-stateless-tool
+(defn build-stateless
   "Build a stateless tool specification (for HTTP servers)"
   [tool-def]
   (let [tool-schema (build-tool-schema tool-def)
@@ -164,17 +170,17 @@
                    (.meta (or (meta e) {})))))))))))))
 
 (defn build-tools
-  "Build tool specifications from tool definitions.
+  "Build tool specifications from plain data definitions.
    
    Parameters:
-   - tool-defs: Collection of tool definitions
+   - tool-defs: Collection of tool definition maps
    - server-type: :session-based or :stateless
    
-   Returns: Vector of tool specifications"
+   Returns: Vector of Java SDK tool specification objects"
   [tool-defs server-type]
   (mapv (case server-type
-          :session-based build-session-based-tool
-          :stateless build-stateless-tool
+          :session-based build-session-based
+          :stateless build-stateless
           (throw (IllegalArgumentException.
                   (str "Unknown server-type: " server-type ". Must be :session-based or :stateless"))))
         tool-defs))

@@ -1,30 +1,26 @@
 (ns mcp2000xl.stateless-test
   (:require [clojure.test :refer [deftest is testing]]
-            [mcp2000xl.stateless :as stateless]
-            [mcp2000xl.stateless.tool :as tool]
-            [mcp2000xl.stateless.resource :as resource]))
+            [mcp2000xl.stateless :as stateless]))
 
 (def add-tool
-  (tool/create-tool-specification
-   {:name "add"
-    :title "Add Two Numbers"
-    :description "Adds two numbers together"
-    :input-schema [:map
-                   [:a int?]
-                   [:b int?]]
-    :output-schema [:map
-                    [:result int?]]
-    :handler (fn [_exchange {:keys [a b]}]
-               {:result (+ a b)})}))
+  {:name "add"
+   :title "Add Two Numbers"
+   :description "Adds two numbers together"
+   :input-schema [:map
+                  [:a int?]
+                  [:b int?]]
+   :output-schema [:map
+                   [:result int?]]
+   :handler (fn [{:keys [a b]}]
+              {:result (+ a b)})})
 
 (def readme-resource
-  (resource/create-resource-specification
-   {:url "custom://readme"
-    :name "Project README"
-    :description "The project's README file"
-    :mime-type "text/markdown"
-    :handler (fn [_context _request]
-               ["# Test README\n\nThis is a test."])}))
+  {:url "custom://readme"
+   :name "Project README"
+   :description "The project's README file"
+   :mime-type "text/markdown"
+   :handler (fn [_request]
+              ["# Test README\n\nThis is a test."])})
 
 (deftest test-create-handler
   (testing "Can create a stateless handler"

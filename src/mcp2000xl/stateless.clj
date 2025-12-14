@@ -2,7 +2,10 @@
   "Stateless MCP server support for Ring and other web frameworks"
   (:require [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [jsonista.core :as json])
+            [jsonista.core :as json]
+            [mcp2000xl.schema :as schema]
+            [mcp2000xl.impl.tool :as impl.tool]
+            [mcp2000xl.impl.resource :as impl.resource])
   (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
            (io.modelcontextprotocol.server McpServer McpStatelessServerHandler McpServer$StatelessSyncSpecification)
            (io.modelcontextprotocol.spec McpStatelessServerTransport McpSchema$ServerCapabilities McpSchema$JSONRPCRequest)
@@ -28,11 +31,13 @@
   "Creates a stateless MCP handler for use in web applications.
    Returns a handler that can be passed to invoke.
    
+   Tools and resources are plain Clojure maps (see mcp2000xl.schema for validation).
+   
    Options:
    - :name (required) - Server name
    - :version (required) - Server version
-   - :tools - Vector of tool specifications (default: [])
-   - :resources - Vector of resource specifications (default: [])
+   - :tools - Vector of tool definition maps (default: [])
+   - :resources - Vector of resource definition maps (default: [])
    - :prompts - Vector of prompt specifications (default: [])
    - :resource-templates - Vector of resource templates (default: [])
    - :completions - Vector of completion specifications (default: [])
@@ -44,9 +49,14 @@
    Returns: Handler object that can be passed to invoke
    
    Example:
-   (def handler (create-handler {:name \"my-server\" 
-                                 :version \"1.0.0\"
-                                 :tools [add-tool]}))"
+   (def handler (create-handler
+                  {:name \"my-server\"
+                   :version \"1.0.0\"
+                   :tools [{:name \"add\"
+                            :description \"Adds two numbers\"
+                            :input-schema [:map [:a int?] [:b int?]]
+                            :output-schema [:map [:result int?]]
+                            :handler (fn [{:keys [a b]}] {:result (+ a b)})}]}))"
   [{:keys [name
            version
            completions
@@ -71,41 +81,50 @@
   (when-not (and name version)
     (throw (IllegalArgumentException. "Both :name and :version are required")))
 
+  ;; Validate tool and resource definitions
+  (schema/validate-tools tools)
+  (schema/validate-resources resources)
+
   (log/info "Creating stateless MCP handler:" name "version" version)
-  (log/info "Registered" (count tools) "tools," (count resources) "resources")
 
-  (let [handler-atom (atom nil)
-        transport (->HandlerCapturingTransport handler-atom)
-        builder (McpServer/sync transport)
-        _server (.build
-                 (doto ^McpServer$StatelessSyncSpecification builder
-                   (.serverInfo name version)
-                   (.jsonMapper mcp-mapper)
-                   (.completions ^List completions)
-                   (.instructions instructions)
-                   (.tools ^List tools)
-                   (.resources ^List resources)
-                   (.resourceTemplates ^List resource-templates)
-                   (.prompts ^List prompts)
-                   (.requestTimeout request-timeout)
-                   (.capabilities
-                    (.build
-                     (cond-> (McpSchema$ServerCapabilities/builder)
-                             (not-empty experimental)
-                             (.experimental experimental)
-                             (not-empty resources)
-                             (.resources true true)
-                             (not-empty tools)
-                             (.tools true)
-                             (not-empty prompts)
-                             (.prompts true)
-                             (not-empty completions)
-                             (.completions)
-                             logging
-                             (.logging))))))]
+  ;; Build Java SDK specifications from plain data
+  (let [built-tools (impl.tool/build-tools tools :stateless)
+        built-resources (impl.resource/build-resources resources :stateless)]
 
-    (log/info "Stateless MCP handler created successfully")
-    @handler-atom))
+    (log/info "Registered" (count built-tools) "tools," (count built-resources) "resources")
+
+    (let [handler-atom (atom nil)
+          transport (->HandlerCapturingTransport handler-atom)
+          builder (McpServer/sync ^McpStatelessServerTransport transport)
+          _server (.build
+                   (doto ^McpServer$StatelessSyncSpecification builder
+                     (.serverInfo name version)
+                     (.jsonMapper mcp-mapper)
+                     (.completions ^List completions)
+                     (.instructions instructions)
+                     (.tools ^List built-tools)
+                     (.resources ^List built-resources)
+                     (.resourceTemplates ^List resource-templates)
+                     (.prompts ^List prompts)
+                     (.requestTimeout request-timeout)
+                     (.capabilities
+                      (.build
+                       (cond-> (McpSchema$ServerCapabilities/builder)
+                               (not-empty experimental)
+                               (.experimental experimental)
+                               (not-empty built-resources)
+                               (.resources true true)
+                               (not-empty built-tools)
+                               (.tools true)
+                               (not-empty prompts)
+                               (.prompts true)
+                               (not-empty completions)
+                               (.completions)
+                               logging
+                               (.logging))))))]
+
+      (log/info "Stateless MCP handler created successfully")
+      @handler-atom)))
 
 (defn invoke
   "Invokes the MCP handler with a request as a Clojure map.
@@ -160,6 +179,7 @@
                           jsonrpc-request)
 
            ;; Block and get response (with timeout)
+           ^io.modelcontextprotocol.spec.McpSchema$JSONRPCResponse
            response (-> response-mono
                         (.timeout (Duration/ofMillis timeout-ms))
                         (.block))]
