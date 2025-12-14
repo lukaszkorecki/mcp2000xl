@@ -1,8 +1,9 @@
 (ns mcp2000xl.server
-  (:require [jsonista.core :as jsonista])
+  (:require [jsonista.core :as jsonista]
+            [clojure.tools.logging :as log])
   (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
            (io.modelcontextprotocol.server McpServer)
-           (io.modelcontextprotocol.server.transport HttpServletStreamableServerTransportProvider)
+           (io.modelcontextprotocol.server.transport StdioServerTransportProvider)
            (io.modelcontextprotocol.spec McpSchema$ServerCapabilities)
            (java.util List)
            (java.time Duration)))
@@ -12,7 +13,28 @@
 (def mcp-mapper
   (JacksonMcpJsonMapper. jsonista/default-object-mapper))
 
-(defn build-mcp-server
+(defn start-stdio
+  "Creates and starts a STDIO MCP server. Blocks forever, handling stdin/stdout.
+   
+   Options:
+   - :name (required) - Server name
+   - :version (required) - Server version
+   - :tools - Vector of tool specifications (default: [])
+   - :resources - Vector of resource specifications (default: [])
+   - :prompts - Vector of prompt specifications (default: [])
+   - :resource-templates - Vector of resource templates (default: [])
+   - :completions - Vector of completion specifications (default: [])
+   - :instructions - Instructions for the AI (default: 'Call these tools to assist the user.')
+   - :logging - Enable logging (default: true)
+   - :experimental - Experimental features map (default: {})
+   - :request-timeout - Request timeout Duration (default: 30 minutes)
+   
+   Returns: Never (blocks forever)
+   
+   Example:
+   (start-stdio {:name \"my-server\" 
+                 :version \"1.0.0\" 
+                 :tools [add-tool subtract-tool]})"
   [{:keys [name
            version
            completions
@@ -21,10 +43,7 @@
            resources
            resource-templates
            prompts
-
            request-timeout
-           keep-alive-interval
-
            experimental
            logging]
     :or {tools []
@@ -35,20 +54,15 @@
          completions []
          logging true
          instructions "Call these tools to assist the user."
-         request-timeout (Duration/ofMinutes 30)
-         keep-alive-interval (Duration/ofSeconds 15)}}]
+         request-timeout (Duration/ofMinutes 30)}}]
 
-  (let [transport-provider (.build
-                            (doto (HttpServletStreamableServerTransportProvider/builder)
-                              (.jsonMapper mcp-mapper)
-                              (.keepAliveInterval keep-alive-interval)
-                              ;; this is important because the MCP servlet verifies
-                              ;; that the request URI ends with whatever value this
-                              ;; is set to (defaults to /mcp). We set it to an empty
-                              ;; string because (.endsWith "anything" "") is always
-                              ;; true, meaning the handler doesn't care what endpoint
-                              ;; the ring handler is mounted at.
-                              (.mcpEndpoint "")))
+  (when-not (and name version)
+    (throw (IllegalArgumentException. "Both :name and :version are required")))
+
+  (log/info "Starting STDIO MCP server:" name "version" version)
+  (log/info "Registered" (count tools) "tools," (count resources) "resources")
+
+  (let [transport-provider (StdioServerTransportProvider. mcp-mapper)
         server (.build
                 (doto (McpServer/sync transport-provider)
                   (.serverInfo name version)
@@ -76,5 +90,9 @@
                             logging
                             (.logging))))))]
 
-    {:transport-provider transport-provider
-     :mcp-server server}))
+    (log/info "STDIO MCP server started successfully")
+    (log/info "Reading from stdin, writing to stdout...")
+
+    ;; Block forever - the transport handles everything
+    ;; We just need to keep the process alive
+    @(promise)))

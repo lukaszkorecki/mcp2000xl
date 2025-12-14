@@ -20,5 +20,9 @@
                               :extra-deps {org.slf4j/slf4j-simple {:mvn/version "2.0.17"}}
                               :main-opts ["-e" "(require 'mcp2000xl.tool 'mcp2000xl.resource 'mcp2000xl.server) (println \"✓ All namespaces loaded successfully\")"]}
 
+           :example-stdio {:extra-paths ["dev-resources"]
+                           :extra-deps {org.slf4j/slf4j-simple {:mvn/version "2.0.17"}}
+                           :main-opts ["-m" "mcp2000xl.examples.stdio-server"]}
+
            :start-fake {:extra-paths ["dev-resources"]
                         :main-opts ["-m" "fake-server"]}}}
