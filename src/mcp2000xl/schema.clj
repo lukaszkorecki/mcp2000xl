@@ -1,78 +1,72 @@
 (ns mcp2000xl.schema
-  "Schema validation for MCP tool and resource definitions.
-   
-   Tools and resources are defined as plain Clojure maps, validated using Malli."
-  (:require [malli.core :as m]))
+  "Schema validation for MCP tool and resource definitions using Malli."
+  (:require [malli.core :as m]
+            [malli.error :as me]))
+
+(set! *warn-on-reflection* true)
+
+;; Tool definition schema
+(def Tool
+  [:map {:closed true}
+   [:name string?]
+   [:handler fn?]
+   [:input-schema :any] ; Will be validated as Malli schema separately
+   [:output-schema :any] ; Will be validated as Malli schema separately
+   [:title {:optional true} string?]
+   [:description {:optional true} string?]
+   [:read-only-hint {:optional true} boolean?]
+   [:destructive-hint {:optional true} boolean?]
+   [:idempotent-hint {:optional true} boolean?]
+   [:open-world-hint {:optional true} boolean?]
+   [:return-direct {:optional true} boolean?]
+   [:meta {:optional true} map?]])
+
+;; Resource definition schema
+(def Resource
+  [:map {:closed true}
+   [:url string?]
+   [:name string?]
+   [:mime-type string?]
+   [:handler fn?]
+   [:description {:optional true} string?]])
+
+(defn- validate-malli-schema
+  "Validate that a value is a valid Malli schema"
+  [schema context]
+  (try
+    (m/schema schema)
+    true
+    (catch Exception e
+      (throw (ex-info (str context " must be a valid Malli schema")
+                      {:schema schema
+                       :error (ex-message e)}
+                      e)))))
 
 (defn validate-tool
-  "Validate a tool definition map.
+  "Validate a tool definition map using Malli schema.
    
-   Required keys:
-   - :name - Tool name (string)
-   - :handler - Function (fn [args] result)
-   - :input-schema - Malli schema for input
-   - :output-schema - Malli schema for output
-   
-   Optional keys:
-   - :title - Tool title
-   - :description - Tool description
-   - :read-only-hint - Boolean (default: false)
-   - :destructive-hint - Boolean (default: false)
-   - :idempotent-hint - Boolean (default: false)
-   - :open-world-hint - Boolean (default: false)
-   - :return-direct - Boolean (default: false)
-   - :meta - Metadata map (default: {})
-   
-   Throws IllegalArgumentException if invalid."
-  [{:keys [name handler input-schema output-schema] :as tool-def}]
-  (when-not name
-    (throw (IllegalArgumentException. "Tool :name is required")))
-  (when-not handler
-    (throw (IllegalArgumentException. "Tool :handler is required")))
-  (when-not (fn? handler)
-    (throw (IllegalArgumentException. "Tool :handler must be a function")))
-  (when-not input-schema
-    (throw (IllegalArgumentException. "Tool :input-schema is required")))
-  (when-not output-schema
-    (throw (IllegalArgumentException. "Tool :output-schema is required")))
-  ;; Try to compile schemas to validate they're correct
-  (try
-    (m/schema input-schema)
-    (catch Exception e
-      (throw (IllegalArgumentException.
-              (str "Tool :input-schema must be a valid Malli schema: " (ex-message e))))))
-  (try
-    (m/schema output-schema)
-    (catch Exception e
-      (throw (IllegalArgumentException.
-              (str "Tool :output-schema must be a valid Malli schema: " (ex-message e))))))
-  tool-def)
+   Throws ex-info with detailed validation errors if invalid."
+  [tool-def]
+  (if-let [explanation (m/explain Tool tool-def)]
+    (throw (ex-info "Invalid tool definition"
+                    {:errors (me/humanize explanation)
+                     :tool-def tool-def}))
+    (do
+      ;; Also validate that input/output schemas are valid Malli schemas
+      (validate-malli-schema (:input-schema tool-def) "Tool :input-schema")
+      (validate-malli-schema (:output-schema tool-def) "Tool :output-schema")
+      tool-def)))
 
 (defn validate-resource
-  "Validate a resource definition map.
+  "Validate a resource definition map using Malli schema.
    
-   Required keys:
-   - :url - Resource URL/URI (string)
-   - :name - Resource name (string)
-   - :mime-type - MIME type (string, e.g., \"text/plain\")
-   - :handler - Function (fn [request] result-strings)
-   
-   Optional keys:
-   - :description - Resource description
-   
-   Throws IllegalArgumentException if invalid."
-  [{:keys [url name mime-type handler] :as resource-def}]
-  (when-not url
-    (throw (IllegalArgumentException. "Resource :url is required")))
-  (when-not name
-    (throw (IllegalArgumentException. "Resource :name is required")))
-  (when-not mime-type
-    (throw (IllegalArgumentException. "Resource :mime-type is required")))
-  (when-not handler
-    (throw (IllegalArgumentException. "Resource :handler is required")))
-  (when-not (fn? handler)
-    (throw (IllegalArgumentException. "Resource :handler must be a function")))
-  resource-def)
+   Throws ex-info with detailed validation errors if invalid."
+  [resource-def]
+  (if-let [explanation (m/explain Resource resource-def)]
+    (throw (ex-info "Invalid resource definition"
+                    {:errors (me/humanize explanation)
+                     :resource-def resource-def}))
+    resource-def))
 
 (defn validate-tools
   "Validate a collection of tool definitions."
