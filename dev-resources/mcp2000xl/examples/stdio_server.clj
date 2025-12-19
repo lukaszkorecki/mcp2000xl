@@ -1,10 +1,9 @@
 (ns mcp2000xl.examples.stdio-server
   "Example STDIO MCP server with a simple add tool"
-  (:require [mcp2000xl.server :as server]
-            [mcp2000xl.tool :as tool]))
+  (:require [mcp2000xl.server.stdio :as server.stdio]))
 
 (defn -main [& _args]
-  (server/start-stdio
+  (server.stdio/create
    {:name "example-stdio-server"
     :version "1.0.0"
     :instructions "This is an example MCP server. Use the 'add' tool to add two numbers."

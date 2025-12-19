@@ -8,7 +8,7 @@
             [mcp2000xl.impl.resource :as impl.resource])
   (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
            (io.modelcontextprotocol.server McpServer McpStatelessServerHandler McpServer$StatelessSyncSpecification)
-           (io.modelcontextprotocol.spec McpStatelessServerTransport McpSchema$ServerCapabilities McpSchema$JSONRPCRequest)
+           (io.modelcontextprotocol.spec McpStatelessServerTransport McpSchema$ServerCapabilities McpSchema$JSONRPCRequest McpSchema$JSONRPCResponse)
            (io.modelcontextprotocol.common McpTransportContext)
            (reactor.core.publisher Mono)
            (java.util List)
@@ -165,26 +165,20 @@
                             (get stringified "id")
                             (get stringified "params"))
 
-           ;; Create empty transport context
+           ;; Create empty transport context since we're stateless, for our usecase Ring handler would manage contexts and such if needed
            context McpTransportContext/EMPTY
-
            ;; Call the handler
            response-mono (McpStatelessServerHandler/.handleRequest handler context jsonrpc-request)
 
            ;; Block and get response (with timeout)
-           ^io.modelcontextprotocol.spec.McpSchema$JSONRPCResponse
-           response (-> response-mono
-                        (.timeout (Duration/ofMillis timeout-ms))
-                        (.block))
+           ^McpSchema$JSONRPCResponse response (-> response-mono
+                                                   (.timeout (Duration/ofMillis timeout-ms))
+                                                   (.block))
 
            ;; Extract fields to Clojure map - convert Java objects to Clojure data
            result-obj (.result response)
            error-obj (.error response)]
-
-       (tap> {:response response
-              :result-obj result-obj
-              :error-obj error-obj})
-
+       ;; TODO: investigate whether we need this writeValueAsString + read-value dance or we can do it more directly?
        (cond-> {:jsonrpc (.jsonrpc response)
                 :id (.id response)}
                result-obj (assoc :result

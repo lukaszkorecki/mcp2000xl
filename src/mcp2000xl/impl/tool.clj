@@ -1,24 +1,27 @@
 (ns mcp2000xl.impl.tool
   "Internal: Build MCP tool specifications from plain data definitions.
-   
+
    Handles the complexity of converting plain Clojure maps into either
    session-based or stateless Java SDK tool specifications."
-  (:require [clojure.tools.logging :as log]
-            [jsonista.core :as jsonista]
-            [malli.core :as m]
-            [malli.error :as me]
-            [malli.json-schema :as mjs]
-            [malli.transform :as mt])
-  (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
-           (io.modelcontextprotocol.server McpServerFeatures$SyncToolSpecification
-                                           McpStatelessServerFeatures$SyncToolSpecification)
-           (io.modelcontextprotocol.spec McpSchema$CallToolRequest
-                                         McpSchema$CallToolResult
-                                         McpSchema$Tool
-                                         McpSchema$ToolAnnotations)
-           (java.io PrintWriter StringWriter)
-           (java.util.concurrent CompletableFuture)
-           (java.util.function BiFunction)))
+  (:require
+   [clojure.tools.logging :as log]
+   [clojure.walk :as walk]
+   [jsonista.core :as jsonista]
+   [malli.core :as m]
+   [malli.error :as me]
+   [malli.json-schema :as mjs]
+   [malli.transform :as mt])
+  (:import
+   (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
+   (io.modelcontextprotocol.server McpServerFeatures$SyncToolSpecification McpStatelessServerFeatures$SyncToolSpecification)
+   (io.modelcontextprotocol.spec
+    McpSchema$CallToolRequest
+    McpSchema$CallToolResult
+    McpSchema$Tool
+    McpSchema$ToolAnnotations)
+   (java.io PrintWriter StringWriter)
+   (java.util.concurrent CompletableFuture)
+   (java.util.function BiFunction)))
 
 (set! *warn-on-reflection* true)
 
@@ -62,22 +65,22 @@
                                                idempotent-hint open-world-hint return-direct))
      (.meta meta))))
 
-(defn- create-handler-logic
-  "Create shared validation/execution logic for tool handlers"
+(defn- tool-def->handler
+  "Create shared validation/execution dispatch for tool handlers"
   [{:keys [name handler input-schema output-schema]}]
   (let [request-coercer (m/decoder input-schema malli-transformer)
         request-explainer (m/explainer input-schema)
         response-coercer (m/decoder output-schema malli-transformer)
         response-explainer (m/explainer output-schema)]
     (fn [request-data]
-      (let [clojure-request-data (jsonista/read-value (jsonista/write-value-as-string request-data))
-            coerced-request-data (request-coercer clojure-request-data)]
+      (let [kw-req-data (walk/keywordize-keys request-data)
+            coerced-request-data (request-coercer kw-req-data)]
         (if-some [explanation (request-explainer coerced-request-data)]
           ;; Input validation failed
           (do
             (let [ex (ex-info "Invalid request for tool call."
                               {:tool name
-                               :request clojure-request-data
+                               :request kw-req-data
                                :explanation (me/humanize explanation)})]
               (log/error ex (ex-message ex)))
             {:error true
@@ -102,7 +105,7 @@
                :meta (meta response-data)})))))))
 
 (defn- create-tool-result
-  "Create a CallToolResult from handler logic result"
+  "Create a CallToolResult from handler dispatch result"
   [result tool-name]
   (try
     (if (:error result)
@@ -123,26 +126,12 @@
          (.addTextContent (throwable->string e))
          (.meta (or (meta e) {})))))))
 
-(defmulti create-tool-handler
-  "Create the BiFunction handler based on server type"
-  (fn [_handler-logic _tool-name server-type] server-type))
-
-(defmethod create-tool-handler :session-based
-  [handler-logic tool-name _]
-  (reify BiFunction
-    (apply [_this _exchange request]
-      (CompletableFuture/supplyAsync
-       (fn []
-         (let [request-data (McpSchema$CallToolRequest/.arguments request)
-               result (handler-logic request-data)]
-           (create-tool-result result tool-name)))))))
-
-(defmethod create-tool-handler :stateless
-  [handler-logic tool-name _]
+(defn handler->bifun
+  [tool-name handler]
   (reify BiFunction
     (apply [_this _context request]
       (let [request-data (McpSchema$CallToolRequest/.arguments request)
-            result (handler-logic request-data)]
+            result (handler request-data)]
         (create-tool-result result tool-name)))))
 
 (defmulti build-tool
@@ -152,30 +141,30 @@
 (defmethod build-tool :session-based
   [tool-def _]
   (let [tool-schema (build-tool-schema tool-def)
-        handler-logic (create-handler-logic tool-def)
+        handler (tool-def->handler tool-def)
         tool-name (:name tool-def)]
     (.build
      (doto (McpServerFeatures$SyncToolSpecification/builder)
        (.tool tool-schema)
-       (.callHandler (create-tool-handler handler-logic tool-name :session-based))))))
+       (.callHandler (handler->bifun tool-name handler))))))
 
 (defmethod build-tool :stateless
   [tool-def _]
   (let [tool-schema (build-tool-schema tool-def)
-        handler-logic (create-handler-logic tool-def)
+        handler (tool-def->handler tool-def)
         tool-name (:name tool-def)]
     (.build
      (doto (McpStatelessServerFeatures$SyncToolSpecification/builder)
        (.tool tool-schema)
-       (.callHandler (create-tool-handler handler-logic tool-name :stateless))))))
+       (.callHandler (handler->bifun tool-name handler))))))
 
 (defn build-tools
   "Build tool specifications from plain data definitions.
-   
+
    Parameters:
    - tool-defs: Collection of tool definition maps
    - server-type: :session-based or :stateless
-   
+
    Returns: Vector of Java SDK tool specification objects"
   [tool-defs server-type]
   (mapv #(build-tool % server-type) tool-defs))

@@ -9,7 +9,6 @@
    [ring.middleware.json :as ring-json]))
 
 (defn router [{:keys [uri request-method component body] :as _req}]
-  (tap> _req)
   (case
    [request-method uri]
     ([:post "/mcp"] [:post "mcp/"]) (let [{:keys [mcp]} component]
