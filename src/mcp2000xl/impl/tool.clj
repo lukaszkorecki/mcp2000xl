@@ -10,9 +10,10 @@
    [malli.core :as m]
    [malli.error :as me]
    [malli.json-schema :as mjs]
-   [malli.transform :as mt])
+   [malli.transform :as mt]
+   [mcp2000xl.impl.json :as json])
   (:import
-   (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
+
    (io.modelcontextprotocol.server McpServerFeatures$SyncToolSpecification McpStatelessServerFeatures$SyncToolSpecification)
    (io.modelcontextprotocol.spec
     McpSchema$CallToolRequest
@@ -20,13 +21,9 @@
     McpSchema$Tool
     McpSchema$ToolAnnotations)
    (java.io PrintWriter StringWriter)
-   (java.util.concurrent CompletableFuture)
    (java.util.function BiFunction)))
 
 (set! *warn-on-reflection* true)
-
-(def mcp-mapper
-  (JacksonMcpJsonMapper. jsonista/default-object-mapper))
 
 (defn- throwable->string [^Throwable t]
   (let [sw (StringWriter.)]
@@ -59,8 +56,8 @@
      (.name name)
      (.title title)
      (.description description)
-     (.inputSchema mcp-mapper (jsonista/write-value-as-string (mjs/transform input-schema)))
-     (.outputSchema mcp-mapper (jsonista/write-value-as-string (mjs/transform output-schema)))
+     (.inputSchema json/mapper (jsonista/write-value-as-string (mjs/transform input-schema)))
+     (.outputSchema json/mapper (jsonista/write-value-as-string (mjs/transform output-schema)))
      (.annotations (McpSchema$ToolAnnotations. title read-only-hint destructive-hint
                                                idempotent-hint open-world-hint return-direct))
      (.meta meta))))
@@ -115,7 +112,7 @@
          (.addTextContent (:content result))))
       (.build
        (doto (McpSchema$CallToolResult/builder)
-         (.structuredContent mcp-mapper (jsonista/write-value-as-string (:content result)))
+         (.structuredContent json/mapper (jsonista/write-value-as-string (:content result)))
          (.meta (or (:meta result) {})))))
     (catch Throwable e
       (let [ex (ex-info "Exception calling tool." {:tool tool-name} e)]

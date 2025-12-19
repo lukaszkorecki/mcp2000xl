@@ -15,6 +15,12 @@
                                lambdaisland/kaocha {:mvn/version "1.91.1392"}}
                   :main-opts ["-m" "kaocha.runner"]}
 
+           :check {:extra-deps {athos/clj-check {:git/url "https://github.com/athos/clj-check.git"
+                                                 :sha "d997df866b2a04b7ce7b17533093ee0a2e2cb729"}}
+                   :main-opts ["-m" "clj-check.check"
+                               "src"]
+                   :jvm-opts ["-Dclojure.main.report=stderr"]}
+
            :example-stdio {:extra-paths ["dev-resources"]
                            :main-opts ["-m" "mcp2000xl.examples.stdio-server"]}
 

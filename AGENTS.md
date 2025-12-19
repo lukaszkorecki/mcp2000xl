@@ -120,7 +120,7 @@ git ls-files
 
 - Run all tests:  `clj -M:dev:test`
 - Run linter: `clojure-lsp diagnostics'
-
+- Run reflection checks: `clj -M:check`
 
 ### Common Tasks
 
@@ -133,13 +133,19 @@ vim src/mcp2000xl/...
 
 # 2. Format
 
+make fmt
 
 # 3. Check for issues
 
+make lint
+
 # 4. Verify no reflection
 
+make check
 
 # 5. Run tests
+
+make test
 
 ```
 

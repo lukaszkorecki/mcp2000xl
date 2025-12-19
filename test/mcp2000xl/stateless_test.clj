@@ -1,7 +1,6 @@
 (ns mcp2000xl.stateless-test
   (:require [clojure.test :refer [deftest is testing]]
-            [mcp2000xl.stateless :as stateless]
-            [cheshire.core :as json]))
+            [mcp2000xl.stateless :as stateless]))
 
 (def add-tool
   {:name "add"

@@ -4,21 +4,17 @@
    Creates servers that communicate via stdin/stdout, perfect for
    Claude Desktop and other MCP clients that use process-based communication."
   (:require [clojure.tools.logging :as log]
-            [jsonista.core :as jsonista]
             [mcp2000xl.schema :as schema]
             [mcp2000xl.impl.tool :as impl.tool]
+            [mcp2000xl.impl.json :as json]
             [mcp2000xl.impl.resource :as impl.resource])
-  (:import (io.modelcontextprotocol.json.jackson JacksonMcpJsonMapper)
-           (io.modelcontextprotocol.server McpServer)
+  (:import (io.modelcontextprotocol.server McpServer)
            (io.modelcontextprotocol.server.transport StdioServerTransportProvider)
            (io.modelcontextprotocol.spec McpSchema$ServerCapabilities)
            (java.util List)
            (java.time Duration)))
 
 (set! *warn-on-reflection* true)
-
-(def mcp-mapper
-  (JacksonMcpJsonMapper. jsonista/default-object-mapper))
 
 (defn create
   "Creates and starts a STDIO MCP server. Blocks forever, handling stdin/stdout.
@@ -83,12 +79,16 @@
         built-resources (impl.resource/build-resources resources :session-based)]
 
     (log/info "Registered" (count built-tools) "tools," (count built-resources) "resources")
+    ;; FIXME: we need to make this unit-testable somehow
+    ;; some ideas:
 
-    (let [transport-provider (StdioServerTransportProvider. mcp-mapper)
+    ;; mimick jetty-adapter's 'join?' option and instead of blocking forever, return the server object
+    ;; this might have addl benefits for advanced users who want to manage the server lifecycle themselves
+    (let [transport-provider (StdioServerTransportProvider. json/mapper)
           _server (.build
                    (doto (McpServer/sync transport-provider)
                      (.serverInfo name version)
-                     (.jsonMapper mcp-mapper)
+                     (.jsonMapper json/mapper)
                      (.completions ^List completions)
                      (.instructions instructions)
                      (.tools ^List built-tools)
@@ -113,6 +113,5 @@
 
       (log/info "STDIO MCP server started successfully")
       (log/info "Reading from stdin, writing to stdout...")
-
       ;; Block forever - the transport handles everything
       @(promise))))
