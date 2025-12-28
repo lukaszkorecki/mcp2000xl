@@ -1,8 +1,5 @@
 (ns mcp2000xl.impl.tool
-  "Internal: Build MCP tool specifications from plain data definitions.
-
-   Handles the complexity of converting plain Clojure maps into either
-   session-based or stateless Java SDK tool specifications."
+  "Internal: Build MCP tool specifications from plain data definitions."
   (:require
    [clojure.tools.logging :as log]
    [clojure.walk :as walk]

@@ -1,10 +1,8 @@
 (ns mcp2000xl.server.stdio
-  "Stateless STDIO transport for MCP using stateless handler.
-   Reads JSON-RPC from stdin, processes with stateless MCP, writes to stdout.
+  "STDIO transport for MCP servers.
+   Reads JSON-RPC from stdin, processes with MCP handler, writes to stdout.
 
-   This is useful for simple MCP servers that don't need session state,
-   or for integration scenarios where you want fine-grained control over
-   the request/response cycle."
+   Perfect for Claude Desktop integration and process-based MCP servers."
   (:require [mcp2000xl.handler :as handler]
             [jsonista.core :as json]
             [clojure.tools.logging :as log])
@@ -23,7 +21,7 @@
   [handler line]
   (try
     (let [request (json/read-value line json/keyword-keys-object-mapper)]
-      ;; Notifications (no ID) are ignored in stateless mode
+      ;; Notifications (no ID) are ignored
       (if-not (:id request)
         (do
           (log/debug "Ignoring notification" {:method (:method request)})
@@ -41,9 +39,9 @@
                 :data {:exception (ex-message e)}}}))))
 
 (defn create
-  "Creates and starts a stateless STDIO MCP server. Blocks forever processing requests.
+  "Creates and starts a STDIO MCP server. Blocks forever processing requests.
 
-   Reads JSON-RPC requests from stdin (one per line), processes them with a stateless
+   Reads JSON-RPC requests from stdin (one per line), processes them with an MCP
    handler, and writes responses to stdout (one per line).
 
    Tools and resources are plain Clojure maps (see mcp2000xl.schema for validation).
@@ -59,7 +57,7 @@
    - :instructions - Instructions for the AI (default: 'Call these tools to assist the user.')
    - :logging - Enable logging (default: false)
    - :experimental - Experimental features map (default: {})
-   - :request-timeout - Request timeout Duration (default: 10 seconds for stateless)
+   - :request-timeout - Request timeout Duration (default: 10 seconds)
 
    Returns: Never (blocks forever)
 
@@ -72,9 +70,9 @@
                      :output-schema [:map [:result int?]]
                      :handler (fn [{:keys [a b]}] {:result (+ a b)})}]})"
   [opts]
-  (log/info "Creating stateless MCP handler")
+  (log/info "Creating MCP handler")
   (let [handler (handler/create opts)]
-    (log/info "Starting stateless STDIO server - reading from stdin, writing to stdout")
+    (log/info "Starting STDIO server - reading from stdin, writing to stdout")
 
     (with-open [reader (BufferedReader. (InputStreamReader. System/in "UTF-8"))
                 writer (BufferedWriter. (OutputStreamWriter. System/out "UTF-8"))]

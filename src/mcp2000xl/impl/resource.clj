@@ -20,7 +20,7 @@
      (.mimeType mime-type))))
 
 (defn- create-resource-handler
-  "Create the BiFunction handler - same logic for both session-based and stateless"
+  "Create the BiFunction handler for resource operations"
   [{:keys [url mime-type handler]}]
   (reify BiFunction
     (apply [_this _context-or-exchange request]

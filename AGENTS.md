@@ -7,7 +7,7 @@
 ### Goals
 
 1. Provide a clean, idiomatic Clojure API for building MCP servers
-2. Support both STDIO and stateless HTTP protocols
+2. Support both STDIO and HTTP protocols
 3. Enable GraalVM native-image compilation (future goal)
 4. Data-driven: tools and resources defined as plain Clojure maps
 
@@ -34,30 +34,27 @@ git ls-files
 - `validate-tools` - Validates collection of tools
 - `validate-resources` - Validates collection of resources
 
-**`mcp2000xl.server.stdio`** - Stateless STDIO server
+**`mcp2000xl.server.stdio`** - STDIO server
 - `create` - Creates and starts STDIO server (blocks forever)
 - `process-line!` - Process a single JSON-RPC request line
 - Takes plain maps for tools/resources
-- Stateless request handling (no session state)
 - Perfect for Claude Desktop integration
 
-**`mcp2000xl.handler`** - Stateless HTTP handler
-- `create-handler` - Creates handler from tool/resource definitions
+**`mcp2000xl.handler`** - MCP request handler
+- `create` - Creates handler from tool/resource definitions
 - `invoke` - Invokes handler with Clojure data (not JSON!)
-- For Ring integration and web frameworks
+- For Ring integration, web frameworks, and STDIO server
 
 ### Internal Implementation
 
 **`mcp2000xl.impl.tool`** - Builds tool specifications
-- Uses multimethods to dispatch on `:stateless` server type
-- Extracts common handler logic (no duplication)
-- `build-tool` multimethod creates Java SDK specs
+- Extracts common handler logic
+- `build-tool` creates Java SDK specs
 - `build-tools` builds collection
 
 **`mcp2000xl.impl.resource`** - Builds resource specifications
-- Uses multimethods to dispatch on `:stateless` server type
-- Extracts common BiFunction handler (zero duplication)
-- `build-resource` multimethod creates Java SDK specs
+- Extracts common BiFunction handler
+- `build-resource` creates Java SDK specs
 - `build-resources` builds collection
 
 ### Key Design Decisions
@@ -70,19 +67,17 @@ git ls-files
     :handler (fn [{:keys [a b]}] {:result (+ a b)})}
    ```
 
-2. **Multimethods over case**: More idiomatic Clojure, easier to extend
-   ```clojure
-   (defmulti build-tool (fn [_ server-type] server-type))
-   (defmethod build-tool :stateless [tool-def _] ...)
-   ```
+2. **Simple Architecture**: One way to build MCP servers
+   - Create a handler with `mcp2000xl.handler/create`
+   - Use it with STDIO transport or invoke directly for HTTP
 
 3. **No Duplication**: Common logic extracted
-   - Resource: BiFunction handler for stateless mode
-   - Tool: Result building shared, only wrapping differs
+   - Resource: BiFunction handler for operations
+   - Tool: Result building and error handling
 
 4. **Transport Support**:
-   - STDIO: Stateless, line-based JSON-RPC protocol
-   - HTTP: Stateless, integrates with Ring/web frameworks
+   - STDIO: Line-based JSON-RPC protocol over stdin/stdout
+   - HTTP: Direct handler invocation for Ring/web frameworks
 
 5. **Malli Integration**: Schemas validated at creation time
 
@@ -119,35 +114,32 @@ git ls-files
 
 ### Testing
 
-- Run all tests:  `clj -M:dev:test`
-- Run linter: `clojure-lsp diagnostics'
-- Run reflection checks: `clj -M:check`
+- Run all tests:  `make test`
+- Run linter: `make lint`
+- Run reflection checks: `make check`
+- Format code: `make fmt`
+- Trim whitespace: `make trim`
+- Show all commands: `make help`
 
 ### Common Tasks
-
-
 
 #### Development Workflow
 ```bash
 # 1. Make changes
 vim src/mcp2000xl/...
 
-# 2. Format
-
+# 2. Format and trim whitespace
 make fmt
+make trim
 
 # 3. Check for issues
-
 make lint
 
 # 4. Verify no reflection
-
 make check
 
 # 5. Run tests
-
 make test
-
 ```
 
 ### Linting Notes
@@ -181,20 +173,20 @@ Public API functions in `mcp2000xl.server.stdio` and `mcp2000xl.handler` may sho
 ;; Blocks forever, reads JSON-RPC from stdin/writes to stdout
 ```
 
-### Stateless HTTP Handler (Ring)
+### HTTP Handler (Ring)
 
 ```clojure
-(require '[mcp2000xl.handler :as stateless])
+(require '[mcp2000xl.handler :as handler])
 
-(def handler (stateless/create-handler
-               {:name "api-server"
-                :version "1.0.0"
-                :tools [my-tool]}))
+(def mcp-handler (handler/create
+                   {:name "api-server"
+                    :version "1.0.0"
+                    :tools [my-tool]}))
 
 (defn ring-handler [request]
   (if (and (= "/mcp" (:uri request))
            (= :post (:request-method request)))
-    (let [response (stateless/invoke handler (:body request))]
+    (let [response (handler/invoke mcp-handler (:body request))]
       {:status 200
        :headers {"Content-Type" "application/json"}
        :body response})
@@ -205,7 +197,7 @@ Public API functions in `mcp2000xl.server.stdio` and `mcp2000xl.handler` may sho
 
 Key Java classes:
 - **Server**: `McpServer`, `McpStatelessServerHandler`
-- **Transport**: Custom stateless transport via `McpStatelessServerTransport`
+- **Transport**: Custom transport via `McpStatelessServerTransport`
 - **Specs**: `McpStatelessServerFeatures$Sync*Specification`
 - **Schema**: `McpSchema$Tool`, `McpSchema$Resource`, `McpSchema$CallToolResult`, `McpSchema$JSONRPCRequest`, `McpSchema$JSONRPCResponse`
 - **JSON**: `JacksonMcpJsonMapper`, `jsonista.core` for efficient JSON handling
@@ -230,5 +222,5 @@ Key Java classes:
 
 - Work on `hard-fork` branch
 - Descriptive commit messages
-- Run all check before commiting
+- Run all checks before committing
 - Use conventional commits when possible

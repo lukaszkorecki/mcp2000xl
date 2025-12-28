@@ -1,5 +1,5 @@
 (ns mcp2000xl.handler
-  "Stateless MCP server support for Ring and other web frameworks"
+  "MCP request handler for building MCP servers"
   (:require [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [jsonista.core :as json]
@@ -28,9 +28,8 @@
   (close [_]))
 
 (defn create
-  "Creates a stateless MCP handler for use in web applications or provided STDIO server
-   (in `mcp2000xl.server.stdio`)
-   Returns a handler that can be passed to invoke.
+  "Creates an MCP handler for processing requests.
+   Returns a handler that can be passed to invoke or used with mcp2000xl.server.stdio.
 
    Tools and resources are plain Clojure maps (see mcp2000xl.schema for validation).
 
@@ -45,12 +44,12 @@
    - :instructions - Instructions for the AI (default: 'Call these tools to assist the user.')
    - :logging - Enable logging (default: false)
    - :experimental - Experimental features map (default: {})
-   - :request-timeout - Request timeout Duration (default: 10 seconds for stateless)
+   - :request-timeout - Request timeout Duration (default: 10 seconds)
 
    Returns: Handler object that can be passed to invoke
 
    Example:
-   (def handler (create-handler
+   (def handler (create
                   {:name \"my-server\"
                    :version \"1.0.0\"
                    :tools [{:name \"add\"
@@ -86,7 +85,7 @@
   (schema/validate-tools tools)
   (schema/validate-resources resources)
 
-  (log/info "Creating stateless MCP handler:" name "version" version)
+  (log/info "Creating MCP handler:" name "version" version)
 
   ;; Build Java SDK specifications from plain data
   (let [built-tools (impl.tool/build-tools tools)
@@ -97,7 +96,7 @@
     (let [handler-atom (atom nil)
           transport (->HandlerCapturingTransport handler-atom)
           builder (McpServer/sync ^McpStatelessServerTransport transport)
-          ;; NOTE: this is not a 'real' server - we are not hodling on to any resoures etc, so it doesn't need
+          ;; NOTE: this is not a 'real' server - we are not holding on to any resources etc, so it doesn't need
           ;;       explicit shutdown or anything like that
           _server (.build
                    (doto ^McpServer$StatelessSyncSpecification builder
@@ -120,7 +119,7 @@
                                (not-empty completions) (.completions)
                                logging (.logging))))))]
 
-      (log/info "Stateless MCP handler created successfully")
+      (log/info "MCP handler created successfully")
       @handler-atom)))
 
 (defn invoke
@@ -131,7 +130,7 @@
    Keys are automatically stringified to ensure compatibility.
 
    Parameters:
-   - handler - Handler created with create-handler
+   - handler - Handler created with create
    - request-map - JSON-RPC request as Clojure map with keys:
      - :jsonrpc (optional, defaults to \"2.0\")
      - :id (required) - Request ID (string or number)
@@ -166,7 +165,7 @@
                             (get stringified "id")
                             (get stringified "params"))
 
-           ;; Create empty transport context since we're stateless, for our usecase Ring handler would manage contexts and such if needed
+           ;; Create empty transport context
            context McpTransportContext/EMPTY
            ;; Call the handler
            response-mono (McpStatelessServerHandler/.handleRequest handler context jsonrpc-request)
