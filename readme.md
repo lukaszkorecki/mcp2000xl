@@ -1,6 +1,6 @@
 # MCP 2000XL
 
-<img src="/docs/mcp.jpg" align="right" height="300px" />
+<img src="/docs/mcp.jpg" align="right" height="200px" />
 
 A toolkit for building MCP ([Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro)) servers.
 It uses Anthropic's [Java SDK](https://github.com/modelcontextprotocol/java-sdk) for the protocol handling, but stays out of your way
