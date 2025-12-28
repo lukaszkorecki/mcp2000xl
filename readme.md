@@ -2,26 +2,19 @@
 
 <img src="/docs/mcp.jpg" align="right" height="200px" />
 
-A toolkit for building MCP ([Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro)) servers.
-It uses Anthropic's [Java SDK](https://github.com/modelcontextprotocol/java-sdk) for the protocol handling, but stays out of your way
-when it comes to the transport itself. This means that you can implement your MCP servers in more flexible ways:
+A toolkit for building MCP ([Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro)) servers. It uses Anthropic's [Java SDK](https://github.com/modelcontextprotocol/java-sdk) for protocol handling, but stays out of your way when it comes to the transport layer. This means you can implement your MCP servers in more flexible ways:
 
-- you can use provided `mcp2000xl.server.stdio` namespace to create a compliant server using STDIO transport
-- or integrate your MCP server definition into existing Ring-based server, it works with any compliant adapter (Jetty, HTTP Kit and more)
+- You can use the provided `mcp2000xl.server.stdio` namespace to create a compliant server using STDIO transport
+- Or integrate your MCP server definition into an existing Ring-based server—it works with any compliant adapter (Jetty, HTTP Kit, and more)
 
 
 Other features and important notes:
 
-- because MCP2000XL relies only on stateless part of the Java SDK - you can create servers that can be distributed as
-  native binaries (something that's not quite possible out of the box with Java SDK) no custom Jetty adapters required
+- MCP2000XL relies only on the stateless part of the Java SDK, which means you can create servers that can be distributed as native binaries (something that's not possible out of the box with the Java SDK). No custom Jetty adapters are required.
 
-- because of the above, resulting MCP server is **stateless** and doesn't manage or create any sessions, in my
-  experience that's not a huge issue - at least in case of MCP servers that I've built if you require sessions, you
+- Because of the above, the resulting MCP server is **stateless** and doesn't manage or create any sessions. In my experience, this hasn't been a major issue—at least for the MCP servers I've built. If you require sessions, you could technically build them yourself, since at all points you have access to the full request data, including session IDs.
 
-- could technically build them yourself, since at all points you have access to full request data, including session IDs
-  etc tool, resource etc definitions are supplied as Malli schemas, which can be naturally converted to JSON Schemas
-
-- that are used as part of the MCP protocol, because of that we can ensure type safety at the edges of the MCP handler
+- Tool and resource definitions are supplied as Malli schemas, which can be naturally converted to JSON schemas that are used as part of the MCP protocol. Because of this, we can ensure type safety at the edges of the MCP handler.
 
 ## Supported features
 
@@ -74,19 +67,19 @@ Let's create a handler for our server - it will expose two tools and once resour
 
 ```
 
-From here, you can use handler in a Ring server. Let's assume we are serving MCP from `/mcp` endpoint:
+From here, you can use the handler in a Ring server. Let's assume we are serving MCP from the `/mcp` endpoint:
 
 
 ```clojure
 (defn handle-mcp [{:keys [body] :as _request}]
-  ;; body here is expected to be a JSON RPC request map,
-  ;; this assumes your Ring middleware is setup, and parsing request body & serializing responses as JSON
+  ;; body here is expected to be a JSON-RPC request map,
+  ;; this assumes your Ring middleware is set up and parsing the request body & serializing responses as JSON
   (let [response (mcp/invoke handler body)]
     {:status 200
      :body response}))
 
 
-;; then in your router, using Reitit as example:
+;; then in your router, using Reitit as an example:
 (def app
  (ring/ring-handler
     (ring/router [["/mcp" {:post handle-mcp}]])))
@@ -94,7 +87,7 @@ From here, you can use handler in a Ring server. Let's assume we are serving MCP
 ```
 
 
-Creating a STDIO servers is simpler:
+Creating a STDIO server is simpler:
 
 
 ```clojure
@@ -123,22 +116,21 @@ Creating a STDIO servers is simpler:
                                   :handler (fn [_request]
                                              ["Hello from the calculator server!"])}]}))
 
-;; NOTE:  you can also re-use existing handler:
+;; NOTE: you can also re-use an existing handler:
 (mcp.stdio/create {:handler handler})
 
 ```
 
-STDIO server will start up and serve requests. Note that it doesn't perform a clean shutdown just yet, but that's
-coming.
-Additionally, `dev-resources` directory contains runnbale example servers using Ring and STDIO.
+The STDIO server will start up and serve requests. Note that it doesn't perform a clean shutdown yet, but that's coming soon.
+
+Additionally, the `dev-resources` directory contains runnable example servers using both Ring and STDIO.
 
 
-## Creating tools, resources etc
+## Creating tools and resources
 
 All inputs are validated using Malli schemas, see `mcp2000xl.schema` for more details.
 
 
 # Notes
 
-Huge thanks to Latacora team for starting https://github.com/latacora/mcp-sdk - this project initially started as a fork
-in which I wanted to add resource and prompt support, but things quickly got out of hand.
+Huge thanks to the Latacora team for starting https://github.com/latacora/mcp-sdk. This project initially started as a fork in which I wanted to add resource and prompt support, but things quickly evolved beyond that scope.
