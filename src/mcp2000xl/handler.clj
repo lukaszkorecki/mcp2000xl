@@ -97,7 +97,8 @@
           transport (->HandlerCapturingTransport handler-atom)
           builder (McpServer/sync ^McpStatelessServerTransport transport)
           ;; NOTE: this is not a 'real' server - we are not holding on to any resources etc, so it doesn't need
-      ;;       explicit shutdown or anything like that
+          ;;       explicit shutdown or anything like that
+          ;; XXX: should we though? Any chances for memory leaks?
           _server (.build (doto ^McpServer$StatelessSyncSpecification builder
                             (.serverInfo name version)
                             (.jsonMapper mcp-mapper)
@@ -152,15 +153,11 @@
    (invoke handler request {}))
   ([handler request {:keys [timeout-ms] :or {timeout-ms 30000}}]
    (try
-     ;; Stringify all keys to ensure Jackson compatibility
-     (let [stringified (walk/stringify-keys request)
-
-           ;; Direct construction - no JSON serialization!
-           jsonrpc-request (McpSchema$JSONRPCRequest.
-                            (get stringified "jsonrpc" "2.0")
-                            (get stringified "method")
-                            (get stringified "id")
-                            (get stringified "params"))
+     (let [jsonrpc-request (McpSchema$JSONRPCRequest.
+                            (get request :jsonrpc "2.0")
+                            (get request :method)
+                            (get request :id)
+                            (get request :params))
 
            ;; Create empty transport context
            context McpTransportContext/EMPTY

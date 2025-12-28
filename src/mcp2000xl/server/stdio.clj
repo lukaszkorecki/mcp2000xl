@@ -69,9 +69,9 @@
                      :input-schema [:map [:a int?] [:b int?]]
                      :output-schema [:map [:result int?]]
                      :handler (fn [{:keys [a b]}] {:result (+ a b)})}]})"
-  [opts]
+  [{:keys [handler] :as opts}]
   (log/info "Creating MCP handler")
-  (let [handler (handler/create opts)]
+  (let [handler (or handler  (handler/create opts))]
     (log/info "Starting STDIO server - reading from stdin, writing to stdout")
 
     (with-open [reader (BufferedReader. (InputStreamReader. System/in "UTF-8"))

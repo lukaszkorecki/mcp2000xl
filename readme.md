@@ -1,71 +1,144 @@
-A Clojure library for easily building compliant Model Context Protocol (MCP) servers. It achieves
-this by wrapping [the official Java SDK](https://github.com/modelcontextprotocol/java-sdk) as a ring
-handler that can be embedded into Clojure applications while still leveraging Clojure middleware and
-routing. This makes it easy to use the most recommended transport (Streamable Http), while not
-complicating your Clojure apps by needing to mount multiple servlets.
+# MCP 2000XL
 
----
+<img src="docs/mcp.jgp" align="right" height="200px" />
 
-## Installation
+A toolkit for building MCP ([Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro)) servers.
+It uses Anthropic's [Java SDK](https://github.com/modelcontextprotocol/java-sdk) for the protocol handling, but stays out of your way
+when it comes to the transport itself. This means that you can implement your MCP servers in more flexible ways:
+
+- you can use provided `mcp2000xl.server.stdio` namespace to create a compliant server using STDIO transport
+- or integrate your MCP server definition into existing Ring-based server, it works with any compliant adapter (Jetty, HTTP Kit and more)
+
+
+Other features and important notes:
+
+- because MCP2000XL relies only on stateless part of the Java SDK - you can create servers that can be distributed as
+  native binaries (something that's not quite possible out of the box with Java SDK) no custom Jetty adapters required
+
+- because of the above, resulting MCP server is **stateless** and doesn't manage or create any sessions, in my
+  experience that's not a huge issue - at least in case of MCP servers that I've built if you require sessions, you
+
+- could technically build them yourself, since at all points you have access to full request data, including session IDs
+  etc tool, resource etc definitions are supplied as Malli schemas, which can be naturally converted to JSON Schemas
+
+- that are used as part of the MCP protocol, because of that we can ensure type safety at the edges of the MCP handler
+
+## Supported features
+
+- [x] tools
+- [x] resources
+- [ ] prompts (possible via Java interop)
+- [ ] templates (possible via Java interop)
+
+
+# Installation
+
+Add to `deps.edn`:
 
 ```clojure
-com.latacora/mcp-sdk {:git/url "https://github.com/latacora/mcp-sdk"
-                      :git/sha "<latest-commit-sha>"}
+  mpc2000xl/mcp {:git/url "https://github.com/lukaszkorecki/mcp2000xl"
+                 :git/sha "<latest sha>"}
 ```
 
----
+Clojars release coming soon.
 
-## Usage
+# Usage
 
-```clojure 
-(require '[com.latacora.mcp.core :as mcp])
 
-; for tools, this library provides a convenient way to construct 
-; tool specifications using malli schemas for input and output 
-; validation (as well as json-schema generation)
-(def tool
-  (mcp/create-tool-specification
-    {:name          "add"
-     :title         "Add two numbers"
-     :description   "Adds two numbers together"
-     :input-schema  [:map [:a int?] [:b int?]]
-     :output-schema [:map [:result int?]]
-     :handler       (fn [_exchange {:keys [a b]}]
-                      {:result (+ a b)})}))
+Let's create a handler for our server - it will expose two tools and once resource.
 
-; when you construct the mcp handler you provide java objects
-; like the underlying modelcontextprotocol requests. this means
-; you're free to build any of the other mcp server features using
-; interop. at a future date we might provide clojure wrappers to
-; make constructing them easier, but for now we only provide one for
-; tools since they're the most common and tedious to construct with interop.
-(def handler (mcp/create-ring-handler {:name "hello-world" :version "1.0.0" :tools [tool]}))
+``` clojure
+(require '[mcp2000xl.handler :as mcp])
 
-; note that this is a custom run-jetty function that preserves
-; the original servlet request/response objects in metadata so
-; they can be passed to the embedded mcp servlet. it is a drop-in
-; replacement for ring.adapter.jetty/run-jetty. here we perform no
-; routing and so the mcp server is mounted at the root path, but you
-; can embed the handler anywhere in your routing tree.
-(def server (mcp/run-jetty handler {:port 3000 :join? false}))
+(def handler
+  (handler/create {:name "calculator"
+                    :version "1.0.0"
+                    :tools [{:name "add"
+                             :description "Adds two numbers"
+                             :input-schema [:map [:a int?] [:b int?]]
+                             :output-schema [:map [:result int?]]
+                             :handler (fn [{:keys [a b]}] {:result (+ a b)})}
+
+                            {:name "multiply"
+                             :description "Multiplies two numbers"
+                             :input-schema [:map [:a int?] [:b int?]]
+                             :output-schema [:map [:result int?]]
+                             :handler (fn [{:keys [a b]}] {:result (* a b)})}]
+
+                    :resources [{:url "custom://greet"
+                                 :name "Greet Resource"
+                                 :description "A simple greeting resource"
+                                 :mime-type "text/plain"
+                                 :handler (fn [_request]
+                                            ["Hello from the calculator server!"])}]}))
 
 ```
 
----
+From here, you can use handler in a Ring server. Let's assume we are serving MCP from `/mcp` endpoint:
 
-## Testing
 
-You can use the [mcp inspector](https://modelcontextprotocol.io/docs/tools/inspector)
-to test your MCP server.
+```clojure
+(defn handle-mcp [{:keys [body] :as _request}]
+  ;; body here is expected to be a JSON RPC request map,
+  ;; this assumes your Ring middleware is setup, and parsing request body & serializing responses as JSON
+  (let [response (mcp/invoke handler body)]
+    {:status 200
+     :body response}))
 
-```bash 
-npx @modelcontextprotocol/inspector --server-url http://localhost:3000
+
+;; then in your router, using Reitit as example:
+(def app
+ (ring/ring-handler
+    (ring/router [["/mcp" {:post handle-mcp}]])))
+
 ```
 
----
 
-## License
+Creating a STDIO servers is simpler:
 
-Copyright © Latacora
 
-Distributed under the Eclipse Public License version 2.0.
+```clojure
+
+(require '[mcp2000xl.server.stdio :as mcp.stdio])
+
+(defn -main []
+  (mcp.stdio/create {:name "calculator"
+                     :version "1.0.0"
+                     :tools [{:name "add"
+                              :description "Adds two numbers"
+                              :input-schema [:map [:a int?] [:b int?]]
+                              :output-schema [:map [:result int?]]
+                              :handler (fn [{:keys [a b]}] {:result (+ a b)})}
+
+                             {:name "multiply"
+                              :description "Multiplies two numbers"
+                              :input-schema [:map [:a int?] [:b int?]]
+                              :output-schema [:map [:result int?]]
+                              :handler (fn [{:keys [a b]}] {:result (* a b)})}]
+
+                     :resources [{:url "custom://greet"
+                                  :name "Greet Resource"
+                                  :description "A simple greeting resource"
+                                  :mime-type "text/plain"
+                                  :handler (fn [_request]
+                                             ["Hello from the calculator server!"])}]}))
+
+;; NOTE:  you can also re-use existing handler:
+(mcp.stdio/create {:handler handler})
+
+```
+
+STDIO server will start up and serve requests. Note that it doesn't perform a clean shutdown just yet, but that's
+coming.
+Additionally, `dev-resources` directory contains runnbale example servers using Ring and STDIO.
+
+
+## Creating tools, resources etc
+
+All inputs are validated using Malli schemas, see `mcp2000xl.schema` for more details.
+
+
+# Notes
+
+Huge thanks to Latacora team for starting https://github.com/latacora/mcp-sdk - this project initially started as a fork
+in which I wanted to add resource and prompt support, but things quickly got out of hand.
